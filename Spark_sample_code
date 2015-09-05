@@ -1,0 +1,122 @@
+3 data files
+market.txt
+"M1","Market 1"
+"M2","Market 2"
+"M3","Market 3"
+"M4","Market 4"
+
+trade.txt
+"T1","M1","C1","B1",205.00,325.00
+"T2","M2","C1","B1",205.00,325.00
+"T3","M2","C2","B1",205.00,325.00
+"T4","M2","C1","B3",205.00,325.00
+"T5","M2","C1","B1",205.00,325.00
+
+currency.txt
+"T1","M1","C1","B1",205.00,325.00
+"T2","M2","C1","B1",205.00,325.00
+"T3","M2","C2","B1",205.00,325.00
+"T4","M2","C1","B3",205.00,325.00
+"T5","M2","C1","B1",205.00,325.00
+
+Scala code
+//trade = tradeid, source system,  market id,  currency code, buying centre , RWA, PV
+
+val trade = sc.textFile("trade.txt").map { line => val parts = line.split(","); (parts(0).trim, parts(1).trim, parts(2).trim, parts(3).trim, parts(4).trim.toFloat, parts(5).trim.toFloat) }
+
+val mkt = sc.textFile("market.txt").map { line => val parts = line.split(","); (parts(0).trim, parts(1).trim) }
+
+val curr = sc.textFile("currency.txt").map { line => val parts = line.split(","); (parts(0).trim, parts(1).trim) }
+
+// Establishing that the third field is to be considered as the Key for the emp RDD
+val manipulated_trade = trade.keyBy(t => t._2)
+
+// Establishing that the second field need to be considered as the Key for dept RDD
+val manipulated_mkt = mkt.keyBy(t => t._1)
+
+val manipulated_curr = curr.keyBy(t => t._1)
+
+// Inner Join
+val join_data = manipulated_trade.join(manipulated_mkt)
+// Left Outer Join
+val left_outer_join_data = manipulated_trade.leftOuterJoin(manipulated_mkt)
+// Right Outer Join
+val right_outer_join_data = manipulated_emp.rightOuterJoin(manipulated_dept)
+// Full Outer Join
+val full_outer_join_data = manipulated_emp.fullOuterJoin(manipulated_dept)
+
+// Formatting the Joined Data for better understandable (using map)
+val cleaned_joined_data = join_data.map(t => (t._2._1._1, t._2._2._2, t._2._1._3, t._2._1._4, t._2._1._5, t._2._1._6))
+
+//cleaned_joined_data.collect()
+
+val join_data_l2 = cleaned_joined_data.keyBy(t => t._3).join(manipulated_curr)
+
+val final_trade_joined_data = join_data_l2.map(t => (t._2._1._1, t._2._1._2, t._2._2._2, t._2._1._4, t._2._1._5, t._2._1._6))
+
+val hadoopConf = new org.apache.hadoop.conf.Configuration()
+val hdfs = org.apache.hadoop.fs.FileSystem.get(new java.net.URI("hdfs://localhost:9000"), hadoopConf)
+try { hdfs.delete(new org.apache.hadoop.fs.Path("final_trade_joined_data.txt"), true) } catch { case _ : Throwable => { } }
+
+final_trade_joined_data.saveAsTextFile("final_trade_joined_data1.txt")
+
+---Aggregation
+
+
+val aggTrade = final_trade_joined_data.map{ case (tradeid, market_name, currency_name, buying_centre_id, rwa, pv) => ((market_name, currency_name), (rwa, pv, rwa, pv)) }.
+  reduceByKey((x, y) => 
+   (x._1 + y._1, x._2 + y._2, math.min(x._3, y._3), math.max(x._4, y._4)))
+
+aggTrade.saveAsTextFile("aggTrade.txt")
+
+
+---------------------------
+old basic code
+
+//trade = tradeid, source system,  market id,  currency code, buying centre , RWA, PV
+val trade = sc.parallelize(Array(("T1","M1","C1","B1", 205.00, 325.00), ("T2","M2","C1","B1", 205.00, 325.00), ("T3","M2","C2","B1", 205.00, 325.00), ("T4","M2","C1","B3", 205.00, 325.00), ("T5","M2","C1","B1", 205.00, 325.00)))
+
+val mkt = sc.parallelize(Seq(("M1","Market 1"), ("M2","Market 2"), ("M3","Market 3"), ("M4","Market 4")))
+
+val curr = sc.parallelize(Seq(("C1","Currency 1"), ("C2","Currency 2"), ("C3","Currency 3"), ("C4","Currency 4")))
+
+// Establishing that the third field is to be considered as the Key for the emp RDD
+val manipulated_trade = trade.keyBy(t => t._2)
+
+// Establishing that the second field need to be considered as the Key for dept RDD
+val manipulated_mkt = mkt.keyBy(t => t._1)
+
+val manipulated_curr = curr.keyBy(t => t._1)
+
+// Inner Join
+val join_data = manipulated_trade.join(manipulated_mkt)
+// Left Outer Join
+val left_outer_join_data = manipulated_trade.leftOuterJoin(manipulated_mkt)
+// Right Outer Join
+val right_outer_join_data = manipulated_emp.rightOuterJoin(manipulated_dept)
+// Full Outer Join
+val full_outer_join_data = manipulated_emp.fullOuterJoin(manipulated_dept)
+
+// Formatting the Joined Data for better understandable (using map)
+val cleaned_joined_data = join_data.map(t => (t._2._1._1, t._2._2._2, t._2._1._3, t._2._1._4, t._2._1._5, t._2._1._6))
+
+//cleaned_joined_data.collect()
+
+val join_data_l2 = cleaned_joined_data.keyBy(t => t._3).join(manipulated_curr)
+
+val final_trade_joined_data = join_data_l2.map(t => (t._2._1._1, t._2._1._2, t._2._2._2, t._2._1._4, t._2._1._5, t._2._1._6))
+
+final_trade_joined_data.saveAsTextFile("final_trade_joined_data.txt")
+------------------------------------------------------------
+
+Other useful links
+http://www.slideshare.net/SparkSummit/visual-api-training?qid=795d978f-fe7b-40a3-bd6f-a593ba0cbe89&v=default&b=&from_search=1
+
+http://homepage.cs.latrobe.edu.au/zhe/ZhenHeSparkRDDAPIExamples.html
+
+good records and bad records
+http://stackoverflow.com/questions/30343588/spark-how-to-handle-error-case-in-rdd-map-method-correctly
+
+How to decide partitions
+http://www.bigsynapse.com/spark-input-output
+
